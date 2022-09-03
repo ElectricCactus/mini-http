@@ -31,6 +31,18 @@ afterAll(() => {
   testServers.forEach((server) => server.shutdown());
 });
 
+async function httpGet(
+  url: URL
+): Promise<{ status?: number; data: string; raw: IncomingMessage }> {
+  return new Promise((resolve, reject) => {
+    get(url, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => resolve({ status: res.statusCode, data, raw: res }));
+    }).on("error", reject);
+  });
+}
+
 describe("createHttpServer", () => {
   it("should create a functional http server", async () => {
     const server = createTestHttpServer(portGen.next().value, defaultLogger);
@@ -51,30 +63,36 @@ describe("createHttpServer", () => {
 
     const url = new URL(`http://localhost:${port}/test`);
 
-    const response: {
-      status?: number;
-      data: string;
-      raw: IncomingMessage;
-    } = await new Promise((resolve, reject) => {
-      get(url, (res) => {
-        res.setEncoding("utf8");
-        let data = "";
-        res.on("data", (chunk) => {
-          data += chunk;
-        });
-        res.on("end", () => {
-          resolve({
-            status: res.statusCode,
-            data,
-            raw: res,
-          });
-        });
-        res.on("error", reject);
-      });
-    });
+    const response = await httpGet(url);
 
     expect(response).toBeDefined();
     expect(response.status).toBe(500);
     expect(response.data).toBe("invalid route");
+  });
+
+  it("should add a basic route", async () => {
+    const port = portGen.next().value;
+    const server = createTestHttpServer(port, defaultLogger);
+
+    server.addRoute({
+      matcher: "/",
+      method: "GET",
+      async handler(request, route) {
+        return {
+          statusCode: 200,
+          body: "hello world",
+        };
+      },
+    });
+
+    await server.start();
+
+    const url = new URL(`http://localhost:${port}/`);
+
+    const response = await httpGet(url);
+
+    expect(response).toBeDefined();
+    expect(response.status).toBe(200);
+    expect(response.data).toBe("hello world");
   });
 });
