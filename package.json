@@ -1,8 +1,8 @@
 {
   "private": true,
-  "name": "template-ts",
-  "version": "1.0.0",
-  "description": "Default template for TypeScript projects",
+  "name": "mini-http",
+  "version": "0.0.1",
+  "description": "a very tiny, very fragile http server. you shouldn't use this",
   "scripts": {
     "build": "esbuild src/index.ts --platform=node --bundle --outdir=dist",
     "lint": "eslint src/ --ext .ts",

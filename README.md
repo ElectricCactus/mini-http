@@ -1,9 +1,9 @@
-# Template: TypeScript
+# mini-http
 
-![Pull Request Workflow Status](https://github.com/mikelittman/template-ts/actions/workflows/pull-request.yml/badge.svg)
+![Pull Request Workflow Status](https://github.com/Electric-Cactus-Labs/mini-http/actions/workflows/pull-request.yml/badge.svg)
 
 
-This is a template for a TypeScript project.
+A very small http server library. You shouldn't use this.
 
 ## Usage
 
