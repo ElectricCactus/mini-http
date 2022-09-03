@@ -1,0 +1,38 @@
+name: Pull Request
+
+on: 
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  install-check-tests:
+    name: Install, Type Check, Test, and Lint
+    runs-on: ubuntu-20.04
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-node@v2
+        with:
+          node-version: "16"
+      - name: Cache node modules
+        uses: actions/cache@v2
+        env:
+          cache-name: ${{ github.repository }}
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+      - name: Install dependencies
+        run: npm ci
+      - name: Check types
+        run: npm run tsc
+      - name: Test
+        run: npm t
+      - name: Lint
+        run: npm run lint
+
+
