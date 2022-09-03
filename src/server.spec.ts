@@ -1,4 +1,5 @@
 import { get, IncomingMessage } from "http";
+import { AuthError } from "./errors";
 import { Logger } from "./logger";
 
 import { createHttpServer, HttpServer } from "./server";
@@ -8,12 +9,14 @@ const testServers: HttpServer[] = [];
 const defaultLogger = new Proxy(
   {},
   {
-    get: () => () => {},
+    get: () => () => {
+      // noop
+    },
   }
 ) as Logger;
 
 function* portGenerator(): Generator<number> {
-  let port = 3000;
+  let port = 9000;
   while (true) {
     yield port++;
   }
@@ -94,5 +97,27 @@ describe("createHttpServer", () => {
     expect(response).toBeDefined();
     expect(response.status).toBe(200);
     expect(response.data).toBe("hello world");
+  });
+
+  it("should return 401 when auth error is thrown", async () => {
+    const port = portGen.next().value;
+    const server = createTestHttpServer(port, defaultLogger);
+
+    server.addRoute({
+      matcher: "/",
+      method: "GET",
+      async handler(request, route) {
+        throw new AuthError("");
+      },
+    });
+
+    await server.start();
+
+    const url = new URL(`http://localhost:${port}/`);
+
+    const response = await httpGet(url);
+
+    expect(response).toBeDefined();
+    expect(response.status).toBe(401);
   });
 });
