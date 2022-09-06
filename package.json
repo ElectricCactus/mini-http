@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "mini-http",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "a very tiny, very fragile http server. you shouldn't use this",
   "scripts": {
     "build": "esbuild src/index.ts --platform=node --bundle --outdir=dist",
