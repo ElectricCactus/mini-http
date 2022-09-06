@@ -10,21 +10,20 @@ import {
   HttpServerOptions,
   Matcher,
   Parsers,
-  Request,
-  Response,
   Route,
   RouteEvaluator,
   ServerInstanceContext,
   ServerInstanceFactory,
 } from "./server";
 import { BadInputError } from "./errors";
+import { HttpRequest, HttpResponse } from "./http";
 
-export type TypedRequest<Body> = Omit<Request, "body"> & {
+export type TypedRequest<Body> = Omit<HttpRequest, "body"> & {
   typed: true;
   body: Body;
 };
 
-export type Requests<Body> = Request | TypedRequest<Body>;
+export type Requests<Body> = HttpRequest | TypedRequest<Body>;
 
 export function isTypedRequest<Body>(
   request: Requests<Body>
@@ -42,7 +41,7 @@ export interface TypedRoute<Body extends TSchema> {
   handler: <B extends Body>(
     request: TypedRequest<Static<B>>,
     route: this
-  ) => Promise<Response>;
+  ) => Promise<HttpResponse>;
 }
 
 export function isTypedRoute<Body extends TSchema>(
@@ -66,7 +65,7 @@ export type TypedServerInstanceFactory<Body extends TSchema> =
 
 export interface TypedHttpServerOptions<Body extends TSchema>
   extends HttpServerOptions<TypedHttpServer, TypedParsers<Body>> {
-  routeEvaluator?: RouteEvaluator<Requests<Body>, Response, Routes<Body>>;
+  routeEvaluator?: RouteEvaluator<Requests<Body>, HttpResponse, Routes<Body>>;
   serverFactory?: TypedServerInstanceFactory<Body>;
 }
 

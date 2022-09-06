@@ -6,26 +6,14 @@ import {
   ServerResponse,
 } from "node:http";
 import { HttpError } from "./errors";
+import { HttpRequest, HttpResponse } from "./http";
 
 import { defaultLogger, Logger } from "./logger";
 
 export type Matcher =
   | string
   | RegExp
-  | ((request: Request, route: Route) => boolean);
-
-export type Request = {
-  path: string;
-  method: string;
-  headers: Record<string, string | string[]>;
-  body?: string;
-};
-
-export type Response = {
-  status: number;
-  headers?: Record<string, string | string[]>;
-  body: unknown;
-};
+  | ((request: HttpRequest, route: Route) => boolean);
 
 export type RouteHandler<Tx, Rx, R> = (request: Tx, route: R) => Promise<Rx>;
 
@@ -37,7 +25,7 @@ export type RouteEvaluator<Tx, Rx, R> = (
 
 export interface Route {
   matcher: Matcher;
-  handler: RouteHandler<Request, Response, Route>;
+  handler: RouteHandler<HttpRequest, HttpResponse, Route>;
 }
 
 export interface HttpServer {
@@ -47,7 +35,7 @@ export interface HttpServer {
   addRoute(route: Route): this;
 }
 
-export type Parsers<Tx extends Request = Request> = {
+export type Parsers<Tx extends HttpRequest = HttpRequest> = {
   Request: (req: IncomingMessage) => Promise<Omit<Tx, "body" | "headers">>;
   Headers: (req: IncomingMessage) => Promise<Tx["headers"]>;
   Body: (req: IncomingMessage) => Promise<Tx["body"]>;
@@ -88,16 +76,16 @@ export const defaultServerInstanceFactory: ServerInstanceFactory<
   };
 };
 
-export type RouteMatcher = (route: Route, request: Request) => boolean;
+export type RouteMatcher = (route: Route, request: HttpRequest) => boolean;
 
 export interface HttpServerOptions<
   T extends HttpServer = HttpServer,
   P extends Parsers = Parsers
 > {
   port: number;
-  defaultResponse?: Response;
+  defaultResponse?: HttpResponse;
   logger?: Logger;
-  routeEvaluator?: RouteEvaluator<Request, Response, Route>;
+  routeEvaluator?: RouteEvaluator<HttpRequest, HttpResponse, Route>;
   requestParser?: P["Request"];
   headersParser?: P["Headers"];
   bodyParser?: P["Body"];
@@ -106,8 +94,8 @@ export interface HttpServerOptions<
 }
 
 export const defaultRouteEvaluator: RouteEvaluator<
-  Request,
-  Response,
+  HttpRequest,
+  HttpResponse,
   Route
 > = async (request, route, logger = defaultLogger()) => {
   return await route.handler(request, route);
@@ -148,7 +136,7 @@ export const defaultRequestParser: Parsers["Request"] = async (req) => {
   };
 };
 
-export function formatErrorAsResponse(error: unknown): Response {
+export function formatErrorAsResponse(error: unknown): HttpResponse {
   let body = "Internal Server Error";
   let status = 500;
   if (error instanceof HttpError) {
@@ -161,7 +149,7 @@ export function formatErrorAsResponse(error: unknown): Response {
 }
 
 export function sendResponse(
-  response: Response,
+  response: HttpResponse,
   serverResponse: ServerResponse
 ): void {
   let body;
@@ -217,7 +205,7 @@ export function createHttpServer<
     if (context.debug) {
       logger.debug("parsed request", request);
     }
-    let response: Response = defaultResponse
+    let response: HttpResponse = defaultResponse
       ? JSON.parse(JSON.stringify(defaultResponse))
       : {
           status: 500,
