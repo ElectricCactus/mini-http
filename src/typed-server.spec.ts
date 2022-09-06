@@ -6,6 +6,7 @@ import { AuthError } from "./errors";
 import { Logger } from "./logger";
 
 import { createTypedHttpServer, TypedHttpServer } from "./typed-server";
+import { httpGet, httpPost } from "./client";
 
 const testServers: TypedHttpServer[] = [];
 
@@ -37,36 +38,6 @@ afterAll(() => {
   testServers.forEach((server) => server.stop());
 });
 
-async function httpGet(
-  url: URL
-): Promise<{ status?: number; data: string; raw: IncomingMessage }> {
-  return new Promise((resolve, reject) => {
-    get(url, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => resolve({ status: res.statusCode, data, raw: res }));
-    }).on("error", reject);
-  });
-}
-
-async function httpPost(
-  url: URL,
-  data: unknown
-): Promise<{ status?: number; data: string; raw: IncomingMessage }> {
-  const options = {
-    method: "POST",
-  };
-  return new Promise((resolve, reject) => {
-    const req = request(url, options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => resolve({ status: res.statusCode, data, raw: res }));
-    }).on("error", reject);
-    req.write(JSON.stringify(data));
-    req.end();
-  });
-}
-
 describe("createHttpServer", () => {
   it("should create a functional http server", async () => {
     const port = portGen.next().value;
@@ -92,7 +63,7 @@ describe("createHttpServer", () => {
 
     expect(response).toBeDefined();
     expect(response.status).toBe(500);
-    expect(response.data).toBe("invalid route");
+    expect("body" in response && response.body).toBe("invalid route");
   });
 
   it("should add a basic route", async () => {
@@ -117,7 +88,7 @@ describe("createHttpServer", () => {
 
     expect(response).toBeDefined();
     expect(response.status).toBe(200);
-    expect(response.data).toBe("hello world");
+    expect("body" in response && response.body).toBe("hello world");
   });
 
   it("should add a typed route", async () => {
@@ -150,7 +121,7 @@ describe("createHttpServer", () => {
 
     expect(response).toBeDefined();
     expect(response.status).toBe(200);
-    expect(response.data).toBe("hello world");
+    expect("body" in response && response.body).toBe("hello world");
   });
 
   it("should return 400 when payload is invalid", async () => {

@@ -155,10 +155,11 @@ export function sendResponse(
   let body;
   if ("body" in response && response.body != undefined) {
     let contentType = "text/plain";
-    body = `${response.body}`;
     if (typeof response.body === "object") {
       body = JSON.stringify(response.body);
       contentType = "application/json";
+    } else {
+      body = `${response.body}`;
     }
     response.headers = {
       "content-type": contentType,
