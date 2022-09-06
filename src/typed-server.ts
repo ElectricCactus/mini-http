@@ -6,7 +6,6 @@ import { TypeCheck, TypeCompiler } from "@sinclair/typebox/compiler";
 
 import {
   createHttpServer,
-  defaultServerInstanceFactory,
   HttpServer,
   HttpServerOptions,
   Matcher,

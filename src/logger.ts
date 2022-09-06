@@ -1,3 +1,5 @@
+import { inspect } from "node:util";
+
 export interface Logger {
   log(...args: any[]): void;
   info(...args: any[]): void;
@@ -13,7 +15,7 @@ const log = (...args: any[]) => {
       if (typeof x === "string") {
         return x;
       } else if (x != undefined) {
-        return JSON.stringify(x, null, 2);
+        return inspect(x);
       } else {
         return `${x}`;
       }

@@ -207,7 +207,7 @@ export function createHttpServer<
 
   server.on("request", async (req, res) => {
     if (context.debug) {
-      logger.debug("raw request", req);
+      logger.debug("raw request", req.url, req.method, req.headers);
     }
     const request = {
       ...(await requestParser(req)),
