@@ -2,9 +2,9 @@ import { get, IncomingMessage } from "http";
 import { AuthError } from "./errors";
 import { Logger } from "./logger";
 
-import { createHttpServer, HttpServer } from "./server";
+import { createTypedHttpServer, TypedHttpServer } from "./typed-server";
 
-const testServers: HttpServer[] = [];
+const testServers: TypedHttpServer<any>[] = [];
 
 const defaultLogger = new Proxy(
   {},
@@ -24,8 +24,8 @@ function* portGenerator(): Generator<number> {
 
 const portGen = portGenerator();
 
-const createTestHttpServer: typeof createHttpServer = (...args) => {
-  const server = createHttpServer(...args);
+const createTestHttpServer: typeof createTypedHttpServer = (...args) => {
+  const server = createTypedHttpServer(...args);
   testServers.push(server);
   return server;
 };

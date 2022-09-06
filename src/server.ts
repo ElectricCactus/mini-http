@@ -1,276 +1,232 @@
-import { once } from "events";
-import { createServer, Server, IncomingMessage, ServerResponse } from "http";
-import { Static, TSchema } from "@sinclair/typebox";
-import { TypeCheck, TypeCompiler } from "@sinclair/typebox/compiler";
-import { defaultLogger, Logger } from "./logger";
-import { HttpError } from "./errors";
+import { once } from "node:events";
 import {
-  HttpJsonResponse,
-  HttpResponse,
-  HttpMethod,
-  HttpMethods,
-  HttpRequest,
-  ValidatedHttpRequest,
-} from "./http";
+  createServer,
+  IncomingMessage,
+  Server,
+  ServerResponse,
+} from "node:http";
+import { HttpError } from "./errors";
 
-function parsePath({ url }: IncomingMessage): string {
-  return url ?? "/";
+import { defaultLogger, Logger } from "./logger";
+
+export type Matcher =
+  | string
+  | RegExp
+  | ((request: Request, route: Route) => boolean);
+
+export type Request = {
+  path: string;
+  method: string;
+  headers: Record<string, string | string[]>;
+  body?: string;
+};
+
+export type Response = {
+  status: number;
+  headers?: Record<string, string | string[]>;
+  body: unknown;
+};
+
+export type RouteHandler<Tx, Rx, R> = (request: Tx, route: R) => Promise<Rx>;
+
+export type RouteEvaluator<Tx, Rx, R> = (
+  request: Tx,
+  route: R,
+  logger: Logger
+) => Promise<Rx>;
+
+export interface Route {
+  matcher: Matcher;
+  handler: RouteHandler<Request, Response, Route>;
 }
 
-function parseMethod({ method }: IncomingMessage): HttpMethod {
-  if (method && HttpMethods.find((item) => item === method?.toUpperCase())) {
-    return method.toUpperCase() as HttpMethod;
+export interface HttpServer {
+  start(): Promise<void>;
+  stop(): void;
+  addRoute(route: Route): this;
+}
+
+export type Parsers<Tx extends Request = Request> = {
+  Request: (req: IncomingMessage) => Promise<Omit<Tx, "body" | "headers">>;
+  Headers: (req: IncomingMessage) => Promise<Tx["headers"]>;
+  Body: (req: IncomingMessage) => Promise<Tx["body"]>;
+};
+
+export type ServerInstanceFactory<T, R = Route> = (
+  context: ServerInstanceContext<R>
+) => T;
+
+export type ServerInstanceContext<R = Route> = {
+  server: Server;
+  port: number;
+  routes: R[];
+};
+
+export const defaultServerInstanceFactory: ServerInstanceFactory<
+  HttpServer,
+  Route
+> = (context: ServerInstanceContext) => {
+  const { server, routes, port } = context;
+  return {
+    async start() {
+      server.listen(port);
+      await once(server, "listening");
+    },
+    stop() {
+      server.close();
+    },
+    addRoute(route: Route) {
+      routes.push(route);
+      return this;
+    },
+  };
+};
+
+export type RouteMatcher = (route: Route, request: Request) => boolean;
+
+export interface HttpServerOptions<
+  T extends HttpServer = HttpServer,
+  P extends Parsers = Parsers
+> {
+  port: number;
+  defaultResponse?: Response;
+  logger?: Logger;
+  routeEvaluator?: RouteEvaluator<Request, Response, Route>;
+  requestParser?: P["Request"];
+  headersParser?: P["Headers"];
+  bodyParser?: P["Body"];
+  routeMatcher?: RouteMatcher;
+  serverFactory?: ServerInstanceFactory<T, Route>;
+}
+
+export const defaultRouteEvaluator: RouteEvaluator<
+  Request,
+  Response,
+  Route
+> = async (request, route, logger = defaultLogger()) => {
+  return await route.handler(request, route);
+};
+
+export const defaultRouteMatcher: RouteMatcher = (route, request) => {
+  const requestString = `${request.method} ${request.path}`;
+  if (typeof route.matcher === "string") {
+    return route.matcher === requestString;
+  } else if (route.matcher instanceof RegExp) {
+    return route.matcher.test(requestString);
   } else {
-    throw new Error(`Invalid method: ${method}`);
+    return route.matcher(request, route);
   }
-}
+};
 
-async function parseBody(
-  request: IncomingMessage
-): Promise<string | undefined> {
+export const defaultHeadersParser: Parsers["Headers"] = async (req) => {
+  const headers: Record<string, string | string[]> = {};
+  for (const [key, value] of Object.entries(req.headers)) {
+    if (value) headers[key.toLowerCase()] = value;
+  }
+  return headers;
+};
+
+export const defaultBodyParser: Parsers["Body"] = async (req) => {
   let data: string | undefined;
-  for await (const chunk of request) {
+  for await (const chunk of req) {
     if (data == undefined) data = "";
     data += chunk;
   }
   return data;
-}
+};
 
-async function parseRequest(request: IncomingMessage): Promise<HttpRequest> {
+export const defaultRequestParser: Parsers["Request"] = async (req) => {
   return {
-    path: parsePath(request),
-    headers: request.headers,
-    method: parseMethod(request),
-    body: await parseBody(request),
+    path: req.url ?? "/",
+    method: req.method ?? "GET",
   };
-}
+};
 
-type Matcher = string | RegExp;
-
-type RouteHandler<Route, Request> = (
-  request: Request,
-  route: Route
-) => Promise<HttpResponse>;
-
-interface DefaultRoute<M extends Matcher> {
-  matcher: M;
-  method: HttpMethod;
-  handler: RouteHandler<this, HttpRequest>;
-}
-
-interface RouteWithValidations<M extends Matcher, BodySchema extends TSchema> {
-  matcher: M;
-  method: HttpMethod;
-  validators: {
-    body: BodySchema;
-  };
-  handler: RouteHandler<this, ValidatedHttpRequest<BodySchema>>;
-}
-
-function isRouteWithValidations<M extends Matcher, S extends TSchema>(
-  route: Route<M, S>
-): route is RouteWithValidations<M, S> {
-  return (
-    // ensure validators is defined
-    "validators" in route &&
-    // ensure all validators are defined
-    Object.values(route.validators).filter((x) => x != undefined).length > 0
-  );
-}
-
-type Route<M extends Matcher, Schema extends TSchema> =
-  | DefaultRoute<M>
-  | RouteWithValidations<M, Schema>;
-
-export interface HttpServer {
-  start(): Promise<void>;
-  shutdown(): void;
-  addRoute<M extends Matcher>(route: DefaultRoute<M>): HttpServer;
-  addRoute<M extends Matcher, S extends TSchema>(
-    route: RouteWithValidations<M, S>
-  ): HttpServer;
-  setDebug(debug: boolean): void;
-}
-
-function matchPath<M extends Matcher, T extends TSchema, U extends HttpRequest>(
-  { path }: U,
-  { matcher }: Route<M, T>
-): boolean {
-  if (matcher instanceof RegExp) {
-    const pathMatches = matcher.test(path);
-    return pathMatches;
-  } else {
-    return matcher === path;
+export function formatErrorAsResponse(error: unknown): Response {
+  let body = "Internal Server Error";
+  let status = 500;
+  if (error instanceof HttpError) {
+    body = error.message;
+    status = error.statusCode;
+  } else if (error instanceof Error) {
+    body = error.message;
   }
+  return { body, status };
 }
 
-function matchMethod<
-  M extends Matcher,
-  T extends TSchema,
-  U extends HttpRequest
->({ method: reqMethod }: U, { method }: Route<M, T>): boolean {
-  return reqMethod === method;
-}
-
-function matchRoute<
-  M extends Matcher,
-  T extends TSchema,
-  U extends HttpRequest
->(request: U, route: Route<M, T>): boolean {
-  return matchPath(request, route) && matchMethod(request, route);
-}
-
-function formatErrorResponse(
-  message: string,
-  statusCode = 500
-): HttpJsonResponse {
-  return {
-    statusCode,
-    body: {
-      error: message,
-    },
-  };
-}
-
-function createCompilerCache<T extends TSchema>() {
-  const cache = new Map<T, TypeCheck<T>>();
-  return {
-    compile(schema: T): TypeCheck<T> {
-      if (cache.has(schema)) {
-        return cache.get(schema)!;
-      } else {
-        const compiler = TypeCompiler.Compile(schema);
-        cache.set(schema, compiler);
-        return compiler;
-      }
-    },
-  };
-}
-
-function isJsonValid<T extends TSchema>(
-  data: unknown,
-  schema: T,
-  compilerCache: ReturnType<typeof createCompilerCache>
-): data is Static<T> {
-  const validator = compilerCache.compile(schema);
-  return validator.Check(data);
-}
-
-function validateRequestBody<M extends Matcher, T extends TSchema>(
-  cache: ReturnType<typeof createCompilerCache>,
-  request: HttpRequest,
-  { body: bodyValidator }: RouteWithValidations<M, T>["validators"]
-): ValidatedHttpRequest<T> {
-  const { body: requestBody } = request;
-  if (requestBody == undefined) {
-    throw new Error("body is undefined");
-  }
-  const body = JSON.parse(requestBody);
-  if (!isJsonValid(body, bodyValidator, cache)) {
-    throw new Error("body is invalid");
-  }
-  return {
-    ...request,
-    body,
-  };
-}
-
-function parseErrorResponse(err: unknown): HttpJsonResponse {
-  if (err instanceof HttpError) {
-    return formatErrorResponse(err.message, err.statusCode);
-  } else if (err instanceof Error) {
-    return formatErrorResponse(err.message);
-  } else {
-    return formatErrorResponse("internal server error");
-  }
-}
-
-export const createHttpServer = <M extends Matcher, T extends TSchema>(
-  port: number,
-  log: Logger = defaultLogger()
-): HttpServer => {
-  const compilerCache = createCompilerCache();
-  let debug = false;
-  const routes: Route<M, T>[] = [];
-  const server: Server = createServer(
-    async (req: IncomingMessage, res: ServerResponse) => {
-      const request = await parseRequest(req);
-      let response: HttpResponse = {
-        statusCode: 500,
-        headers: {
-          "content-type": "text/plain",
-        },
-        body: "invalid route",
-      };
-
-      if (debug) {
-        log.debug(request);
-      }
-
-      for (const route of routes) {
-        if (matchRoute(request, route)) {
-          try {
-            if (isRouteWithValidations(route)) {
-              const validatedRequest = {
-                ...validateRequestBody(
-                  compilerCache,
-                  request,
-                  route.validators
-                ),
-              };
-              response = await route.handler(validatedRequest, route);
-            } else {
-              response = await route.handler(request, route);
-            }
-          } catch (err) {
-            log.error(err);
-            response = parseErrorResponse(err);
-          }
-          // there can be only one
-          break;
-        }
-      }
-
-      let body;
-      if ("body" in response && response.body != undefined) {
-        let contentType = "text/plain";
-        body = `${response.body}`;
-        if (typeof response.body === "object") {
-          body = JSON.stringify(response.body);
-          contentType = "application/json";
-        }
-        response.headers = {
-          "content-type": contentType,
-          ...response.headers,
-          "content-length": Buffer.byteLength(body).toString(),
-        };
-      }
-      res.writeHead(response.statusCode, response.headers);
-      if (body) res.write(body);
-      res.end();
+export function sendResponse(
+  response: Response,
+  serverResponse: ServerResponse
+): void {
+  let body;
+  if ("body" in response && response.body != undefined) {
+    let contentType = "text/plain";
+    body = `${response.body}`;
+    if (typeof response.body === "object") {
+      body = JSON.stringify(response.body);
+      contentType = "application/json";
     }
-  );
+    response.headers = {
+      "content-type": contentType,
+      ...response.headers,
+      "content-length": Buffer.byteLength(body).toString(),
+    };
+  }
 
-  server.on("listening", (): void => {
-    log.debug(`listening on port ${port}`);
+  serverResponse.writeHead(response.status, response.headers);
+  if (body) serverResponse.write(body);
+  serverResponse.end();
+}
+
+export function createHttpServer<
+  T extends HttpServer = HttpServer,
+  P extends Parsers = Parsers
+>({
+  port,
+  defaultResponse,
+  routeEvaluator = defaultRouteEvaluator,
+  requestParser = defaultRequestParser,
+  headersParser = defaultHeadersParser,
+  bodyParser = defaultBodyParser,
+  routeMatcher = defaultRouteMatcher,
+  serverFactory,
+  logger = defaultLogger(),
+}: HttpServerOptions<T, P>): T {
+  const server = createServer();
+  const routes: { matcher: Matcher; handler: any }[] = [];
+  const context = { server, port, routes };
+
+  const factory = serverFactory ?? defaultServerInstanceFactory;
+  const instance: T = factory(context) as T;
+
+  server.on("request", async (req, res) => {
+    const request = {
+      ...(await requestParser(req)),
+      headers: await headersParser(req),
+      body: await bodyParser(req),
+    };
+    let response: Response = defaultResponse
+      ? JSON.parse(JSON.stringify(defaultResponse))
+      : {
+          status: 500,
+          headers: {
+            "content-type": "text/plain",
+          },
+          body: "invalid route",
+        };
+    for (const route of routes) {
+      if (routeMatcher(route, request)) {
+        try {
+          response = await routeEvaluator(request, route, logger);
+        } catch (error: unknown) {
+          logger.error(error);
+          response = formatErrorAsResponse(error);
+        }
+        break;
+      }
+    }
+    sendResponse(response, res);
   });
 
-  const self: HttpServer = {
-    addRoute(route: Route<M, T>): typeof self {
-      routes.push(route);
-      return self;
-    },
-    setDebug(value: boolean): void {
-      debug = value;
-    },
-    async start(): Promise<void> {
-      server.listen(port);
-      await once(server, "listening");
-    },
-    shutdown(): void {
-      server.close();
-    },
-  };
-
-  return self;
-};
+  return instance;
+}
