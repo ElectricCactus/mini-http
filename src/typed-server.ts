@@ -32,13 +32,15 @@ export function isTypedRequest<Body>(
   return "typed" in request;
 }
 
+export type TypedSchema<TBody extends TSchema> = {
+  body: TBody;
+};
+
 export interface TypedRoute<Body extends TSchema> {
   matcher: Matcher;
-  schema: {
-    body: Body;
-  };
-  handler: (
-    request: TypedRequest<Static<Body>>,
+  schema: TypedSchema<Body>;
+  handler: <B extends Body>(
+    request: TypedRequest<Static<B>>,
     route: this
   ) => Promise<Response>;
 }
@@ -53,17 +55,17 @@ export type TypedParsers<Body extends TSchema> = Parsers & {
   Body: (req: IncomingMessage) => Promise<Static<Body>>;
 };
 
-export interface TypedHttpServer<Body extends TSchema> extends HttpServer {
-  addTypedRoute(route: TypedRoute<Body>): this;
+export interface TypedHttpServer extends HttpServer {
+  addTypedRoute<Body extends TSchema>(route: TypedRoute<Body>): this;
 }
 
 export type Routes<Body extends TSchema> = Route | TypedRoute<Body>;
 
 export type TypedServerInstanceFactory<Body extends TSchema> =
-  ServerInstanceFactory<TypedHttpServer<Body>, Routes<Body>>;
+  ServerInstanceFactory<TypedHttpServer, Routes<Body>>;
 
 export interface TypedHttpServerOptions<Body extends TSchema>
-  extends HttpServerOptions<TypedHttpServer<Body>, TypedParsers<Body>> {
+  extends HttpServerOptions<TypedHttpServer, TypedParsers<Body>> {
   routeEvaluator?: RouteEvaluator<Requests<Body>, Response, Routes<Body>>;
   serverFactory?: TypedServerInstanceFactory<Body>;
 }
@@ -85,7 +87,7 @@ export function createCompilerCache<T extends TSchema>() {
 
 export function typedServerInstanceFactory<Body extends TSchema>(
   context: ServerInstanceContext<Routes<Body>>
-): TypedHttpServer<Body> {
+): TypedHttpServer {
   const { server, routes, port } = context;
   return {
     async start() {
@@ -99,8 +101,9 @@ export function typedServerInstanceFactory<Body extends TSchema>(
       routes.push(route);
       return this;
     },
-    addTypedRoute(route: TypedRoute<Body>) {
-      routes.push(route);
+    addTypedRoute<B extends TSchema>(route: TypedRoute<B>) {
+      // todo: type this without the cast
+      routes.push(route as unknown as TypedRoute<Body>);
       return this;
     },
   };
@@ -108,7 +111,7 @@ export function typedServerInstanceFactory<Body extends TSchema>(
 
 export function createTypedHttpServer<Body extends TSchema>(
   options: TypedHttpServerOptions<Body>
-): TypedHttpServer<Body> {
+): TypedHttpServer {
   const compiler = createCompilerCache();
   const _options: TypedHttpServerOptions<Body> = {
     ...options,
@@ -136,7 +139,7 @@ export function createTypedHttpServer<Body extends TSchema>(
       }
     },
   };
-  const instance = createHttpServer<TypedHttpServer<Body>, TypedParsers<Body>>(
+  const instance = createHttpServer<TypedHttpServer, TypedParsers<Body>>(
     _options
   );
 

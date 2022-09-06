@@ -1,4 +1,7 @@
-import { get, IncomingMessage } from "http";
+import { get, request, IncomingMessage } from "node:http";
+
+import { Static, Type } from "@sinclair/typebox";
+
 import { AuthError } from "./errors";
 import { Logger } from "./logger";
 
@@ -43,6 +46,24 @@ async function httpGet(
       res.on("data", (chunk) => (data += chunk));
       res.on("end", () => resolve({ status: res.statusCode, data, raw: res }));
     }).on("error", reject);
+  });
+}
+
+async function httpPost(
+  url: URL,
+  data: unknown
+): Promise<{ status?: number; data: string; raw: IncomingMessage }> {
+  const options = {
+    method: "POST",
+  };
+  return new Promise((resolve, reject) => {
+    const req = request(url, options, (res) => {
+      let data = "";
+      res.on("data", (chunk) => (data += chunk));
+      res.on("end", () => resolve({ status: res.statusCode, data, raw: res }));
+    }).on("error", reject);
+    req.write(JSON.stringify(data));
+    req.end();
   });
 }
 
@@ -97,6 +118,71 @@ describe("createHttpServer", () => {
     expect(response).toBeDefined();
     expect(response.status).toBe(200);
     expect(response.data).toBe("hello world");
+  });
+
+  it("should add a typed route", async () => {
+    const port = portGen.next().value;
+    const server = createTestHttpServer({ port, logger: defaultLogger });
+
+    const schema = Type.Object({
+      foo: Type.String(),
+      bar: Type.Number(),
+    });
+
+    server.addTypedRoute({
+      matcher: "POST /",
+      schema: {
+        body: schema,
+      },
+      async handler(request, route) {
+        return {
+          status: 200,
+          body: "hello world",
+        };
+      },
+    });
+
+    await server.start();
+
+    const url = new URL(`http://localhost:${port}/`);
+
+    const response = await httpPost(url, { foo: "str", bar: 1 });
+
+    expect(response).toBeDefined();
+    expect(response.status).toBe(200);
+    expect(response.data).toBe("hello world");
+  });
+
+  it("should return 400 when payload is invalid", async () => {
+    const port = portGen.next().value;
+    const server = createTestHttpServer({ port, logger: defaultLogger });
+
+    const schema = Type.Object({
+      foo: Type.String(),
+      bar: Type.Number(),
+    });
+
+    server.addTypedRoute({
+      matcher: "POST /",
+      schema: {
+        body: schema,
+      },
+      async handler(request, route) {
+        return {
+          status: 200,
+          body: "hello world",
+        };
+      },
+    });
+
+    await server.start();
+
+    const url = new URL(`http://localhost:${port}/`);
+
+    const response = await httpPost(url, {});
+
+    expect(response).toBeDefined();
+    expect(response.status).toBe(400);
   });
 
   it("should return 401 when auth error is thrown", async () => {
