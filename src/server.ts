@@ -41,6 +41,7 @@ export interface Route {
 }
 
 export interface HttpServer {
+  debug(debug: boolean): this;
   start(): Promise<void>;
   stop(): void;
   addRoute(route: Route): this;
@@ -57,6 +58,7 @@ export type ServerInstanceFactory<T, R = Route> = (
 ) => T;
 
 export type ServerInstanceContext<R = Route> = {
+  debug: boolean;
   server: Server;
   port: number;
   routes: R[];
@@ -71,6 +73,10 @@ export const defaultServerInstanceFactory: ServerInstanceFactory<
     async start() {
       server.listen(port);
       await once(server, "listening");
+    },
+    debug(debug) {
+      context.debug = debug;
+      return this;
     },
     stop() {
       server.close();
@@ -194,17 +200,23 @@ export function createHttpServer<
 }: HttpServerOptions<T, P>): T {
   const server = createServer();
   const routes: { matcher: Matcher; handler: any }[] = [];
-  const context = { server, port, routes };
+  const context = { server, port, routes, debug: false };
 
   const factory = serverFactory ?? defaultServerInstanceFactory;
   const instance: T = factory(context) as T;
 
   server.on("request", async (req, res) => {
+    if (context.debug) {
+      logger.debug("raw request", req);
+    }
     const request = {
       ...(await requestParser(req)),
       headers: await headersParser(req),
       body: await bodyParser(req),
     };
+    if (context.debug) {
+      logger.debug("parsed request", request);
+    }
     let response: Response = defaultResponse
       ? JSON.parse(JSON.stringify(defaultResponse))
       : {

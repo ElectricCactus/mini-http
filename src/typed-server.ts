@@ -6,6 +6,7 @@ import { TypeCheck, TypeCompiler } from "@sinclair/typebox/compiler";
 
 import {
   createHttpServer,
+  defaultServerInstanceFactory,
   HttpServer,
   HttpServerOptions,
   Matcher,
@@ -93,6 +94,10 @@ export function typedServerInstanceFactory<Body extends TSchema>(
     async start() {
       server.listen(port);
       await once(server, "listening");
+    },
+    debug(debug) {
+      context.debug = debug;
+      return this;
     },
     stop() {
       server.close();
