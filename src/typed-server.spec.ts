@@ -7,7 +7,7 @@ import { Logger } from "./logger";
 
 import { createTypedHttpServer, TypedHttpServer } from "./typed-server";
 
-const testServers: TypedHttpServer<any>[] = [];
+const testServers: TypedHttpServer[] = [];
 
 const defaultLogger = new Proxy(
   {},
