@@ -6,6 +6,7 @@ import {
   ServerResponse,
 } from "node:http";
 import { HttpError } from "./errors";
+import { parseHeaders } from "./headers";
 import { HttpRequest, HttpResponse } from "./http";
 
 import { defaultLogger, Logger } from "./logger";
@@ -112,13 +113,8 @@ export const defaultRouteMatcher: RouteMatcher = (route, request) => {
   }
 };
 
-export const defaultHeadersParser: Parsers["Headers"] = async (req) => {
-  const headers: Record<string, string | string[]> = {};
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (value) headers[key.toLowerCase()] = value;
-  }
-  return headers;
-};
+export const defaultHeadersParser: Parsers["Headers"] = async (req) =>
+  parseHeaders(req) ?? {};
 
 export const defaultBodyParser: Parsers["Body"] = async (req) => {
   let data: string | undefined;
