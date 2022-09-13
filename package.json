@@ -1,7 +1,6 @@
 {
   "private": true,
   "name": "@ecactus/mini-http",
-  "type": "module",
   "version": "0.0.2",
   "description": "a very tiny, very fragile http server. you shouldn't use this",
   "scripts": {

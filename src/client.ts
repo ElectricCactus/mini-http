@@ -56,7 +56,7 @@ export async function httpRequest(
       resolve(response);
     };
 
-    const request = url.protocol === "https" ? https : http;
+    const request = url.protocol === "https:" ? https : http;
     const req = request(url, options, handleIncomingMessage).on(
       "error",
       reject
